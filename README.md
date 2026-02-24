@@ -109,7 +109,7 @@ If you find this work useful, please cite:
 ```bibtex
 @inproceedings{eimc2026icra,
   title={EIMC: Efficient Instance-aware Multi-modal Collaborative Perception},
-  author={TODO},
+  author={Kang Yang, Peng Wang, Lantao Li, Tianci Bu, Chen Sun, Deying Li, Yongcai Wang*},
   booktitle={IEEE International Conference on Robotics and Automation (ICRA)},
   year={2026}
 }
