@@ -1,0 +1,265 @@
+name: opv2v_DSFusion_V2_no_refinement
+root_dir: "/mnt/sdb/public/data/yangk/dataset/OPV2V/train"
+validate_dir: "/mnt/sdb/public/data/yangk/dataset/OPV2V/validate/"
+test_dir: "/mnt/sdb/public/data/yangk/dataset/OPV2V/test"
+
+noise_setting:
+  add_noise: False
+
+yaml_parser: "load_point_pillar_params"
+
+train_params:
+  batch_size: &batch_size 1
+  epoches: 40
+  eval_freq: 2
+  save_freq: 5
+  max_cav: 4
+
+camera_params:
+  use_depth_gt: &use_depth_gt True
+
+comm_range: 100
+input_source: ['lidar','camera']
+label_type: 'lidar'
+cav_lidar_range: &cav_lidar [-51.2, -51.2, -3, 51.2, 51.2, 1]
+
+fusion:
+  core_method: 'intermediate' # LateFusionDataset, EarlyFusionDataset, IntermediateFusionDataset supported
+  dataset: 'opv2v'
+  args: 
+    proj_first: False
+    data_aug_conf: &data_aug_conf
+      resize_lim: [0.7, 0.8]
+      final_dim: [320, 480]
+      rot_lim: [-3.6, 3.6]
+      H: 600
+      W: 800
+      rand_flip: False
+      bot_pct_lim: [0.0, 0.10]
+      cams: ['camera0', 'camera1', 'camera2', 'camera3']
+      Ncams: 4
+    # resnet50
+    normalize_img:
+      mean: [  0.485, 0.456, 0.406 ]
+      std: [ 0.229, 0.224, 0.225 ]
+      to_rgb: True
+
+
+# preprocess-related
+preprocess:
+  # options: BasePreprocessor, VoxelPreprocessor, BevPreprocessor
+  core_method: 'SpVoxelPreprocessor'
+  args:
+    use_occ: &use_occ Ture
+    voxel_size: &voxel_size [0.4, 0.4, 0.4]
+    max_points_per_voxel: 32
+    # TODO: 这里需要减半吗？
+    max_voxel_train: 16000
+    max_voxel_test: 40000
+  # lidar range for each individual cav.
+  cav_lidar_range: *cav_lidar
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: [ 'x' ]
+
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [ -0.78539816, 0.78539816 ]
+
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [ 0.95, 1.05 ]
+
+# anchor box related
+postprocess:
+  core_method: 'VoxelPostprocessor' # VoxelPostprocessor, BevPostprocessor supported
+  gt_range: *cav_lidar
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+    l: 3.9
+    w: 1.6
+    h: 1.56
+    r: &anchor_yaw [0, 90]
+    feature_stride: 2
+    num: &anchor_num 2
+  target_args:
+    pos_threshold: 0.6
+    neg_threshold: 0.45
+    score_threshold: 0.2
+  order: 'hwl' # hwl or lwh
+  max_num: 150 # maximum number of objects in a single frame. use this number to make sure different frames has the same dimension in the same batch
+  nms_thresh: 0.15
+  dir_args: &dir_args
+    dir_offset: 0.7853
+    num_bins: 2
+    anchor_yaw: *anchor_yaw
+
+# model related
+model:
+  core_method: DSfusionV2
+  args:
+    use_occ: *use_occ
+    anchor_number: *anchor_num
+    dir_args: *dir_args
+    embed_dims: &embed_dims 128
+    occ_dims: 64
+    voxel_size: *voxel_size
+    lidar_range: *cav_lidar
+    drop_out: &drop_out 0.1
+    num_class: &num_class 1
+    modality: ["L", "C"]
+    Image_branch:
+      grid_conf:
+        xbound: [-51.2, 51.2, 0.4]   # Limit the range of the x direction and divide the grids
+        ybound: [-51.2, 51.2, 0.4]   # Limit the range of the y direction and divide the grids
+        zbound: [-3, 1, 0.4]   # Limit the range of the z direction and divide the grids
+        ddiscr: [2, 50, 48]
+        mode: 'LID'
+      data_aug_conf: *data_aug_conf
+      img_downsample: 8
+      img_features: *embed_dims
+      use_depth_gt: *use_depth_gt
+      depth_supervision: true
+    
+    pillar_vfe:
+      use_norm: true
+      with_distance: false
+      use_absolute_xyz: true
+      num_filters: [64]
+    point_pillar_scatter:
+      num_features: 64
+
+    base_bev_backbone:
+      layer_nums: [3]
+      layer_strides: [2]
+      num_filters: [64]
+      upsample_strides: [1]
+      num_upsample_filter: [128]
+
+    shrink_header: 
+      kernal_size: [ 3 ]
+      stride: [ 1 ]
+      padding: [ 1 ]
+      dim: [ *embed_dims ]
+      input_dim: 128 # 128 * 3
+    
+    sensor_fusion:
+      use_attn: False
+      method: 'cat'
+      mha:
+        embed_dims: *embed_dims
+        num_heads: &num_heads 8
+        batch_first: False
+        dropout: *drop_out
+    agent_fusion:
+      depth: 1
+      ms_layers: 3
+      embed_dims: *embed_dims
+      num_class: *num_class
+      instance_num: [100,50,25]
+
+      mha_topk1:
+        embed_dims: 128
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+
+      mha_topk2:
+        embed_dims: 256
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+
+      mha_topk3:
+        embed_dims: 512
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+
+      mha1:
+        embed_dims: 128
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+      mha2:
+        embed_dims: 256
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+      mha3:
+        embed_dims: 512
+        num_heads: 8
+        batch_first: False
+        dropout: *drop_out
+
+      down_head1: 
+        kernal_size: [ 3 ]
+        stride: [ 1 ]
+        padding: [ 1 ]
+        dim: [ 128 ]
+        input_dim: 128 
+      down_head2: 
+        kernal_size: [ 2 ]
+        stride: [ 2 ]
+        padding: [ 0 ]
+        dim: [ 256 ]
+        input_dim: 128
+      down_head3: 
+        kernal_size: [ 2 ]
+        stride: [ 2 ]
+        padding: [ 0 ]
+        dim: [ 512 ]
+        input_dim: 256
+      ffn:
+        in_channels: *embed_dims
+        pre_norm:
+          type: "LN"
+        embed_dims: *embed_dims
+        feedforward_channels: *embed_dims
+        num_fcs: 2
+        ffn_drop: *drop_out
+        act_cfg:
+          type: "ReLU"
+          inplace: true
+
+loss:
+  core_method: point_pillar_depth_heatmap_loss
+  args:
+    lidar_range: *cav_lidar
+    voxel_size: *voxel_size
+    pos_cls_weight: 2.0
+    cls:
+      type: 'SigmoidFocalLoss'
+      alpha: 0.25
+      gamma: 2.0
+      weight: 1.0
+    reg:
+      type: 'WeightedSmoothL1Loss'
+      sigma: 3.0
+      codewise: true
+      weight: 2.0
+    dir:
+      type: 'WeightedSoftmaxClassificationLoss'
+      weight: 0.2
+      args: *dir_args
+    depth:
+      weight: 1.0
+    target_assigner_config:
+      max_objs: 150
+      out_size_factor: [2,4,8]
+      gaussian_overlap: 0.2
+      min_radius: 0
+    heatmap_weight: 0.5
+
+
+optimizer:
+  core_method: Adam
+  lr: 0.0004
+  args:
+    eps: 1e-10
+    weight_decay: 1e-4
+
+lr_scheduler:
+  core_method: multistep #step, multistep and Exponential support
+  gamma: 0.1
+  step_size: [10, 25]
+

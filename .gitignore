@@ -1,0 +1,72 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & outputs
+*.out
+*.log
+nohup.out
+logs/
+opencood/logs/
+
+# Dataset (users download separately)
+dataset/
+dataset_link/
+
+# Checkpoints
+*.pth
+*.ckpt
+
+# Experiment artifacts
+vis_result/
+data_vis/
+image_compare/
+stage1_boxes/
+box_align_items/
+bash_script/
+test_for_inference*.txt
+
+# C extensions (compiled)
+*.c
+
+# Paper source
+writing/
+
+# Shell scripts
+*.sh
+
+# HEAL original images (keep only png)
+images/*.jpg
+images/*.gif
+
+# Misc
+.readthedocs.yaml
+opv2v_data_dumping/
+icp/
+keypoints_file/
+opencood/logs_HEAL/
+opencood/logs_baseline/
